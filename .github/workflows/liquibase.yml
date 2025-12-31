@@ -49,21 +49,21 @@ jobs:
 
       - name:  Ensure Liquibase is installed & Check Version
         run: |
-          # Set installation directory
           LIQUIBASE_DIR=$HOME/liquibase
-          
           if ! command -v liquibase &> /dev/null || ! liquibase --version &> /dev/null
             then
               echo "Installing/repairing Liquibase..."
               mkdir -p $LIQUIBASE_DIR
               curl -L https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz -o liquibase.tar.gz
               tar -xvzf liquibase.tar.gz -C $LIQUIBASE_DIR --strip-components=1
+              chmod +x $LIQUIBASE_DIR/liquibase  # make sure it's executable
           else
             echo "Liquibase already installed and working"
           fi
           export PATH=$LIQUIBASE_DIR:$PATH
           LIQUIBASE_VERSION=$(liquibase --version)
           echo "Liquibase $LIQUIBASE_VERSION installed successfully."
+          
       - name: Run Liquibase Update
         uses: liquibase/liquibase-github-action@v4
         with:
