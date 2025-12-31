@@ -11,11 +11,17 @@ on:
           - dev
           - qa
           - demo
+      runner_group:
+        description: 'Select Runner Group'
+        required: false
+        type: choice
+        options:
+          - NA    
       services:
-        description: "Comma-separated list of services (default: all)"
+        description: "Optional - Please type Comma-separated list of services to run (default: all)"
         required: false
       schema_config:
-        description: "Schema config YAML from config/ folder"
+        description: "Optional - Please Select Schema Config Yaml file to run for manual trigger in config/ folder"
         required: false
         default: schema-config-dev.yml
         type: choice
@@ -23,6 +29,11 @@ on:
           - schema-config-dev.yml
           - schema-config-qa.yml
           - schema-config-demo.yml
+      selected_schemas:
+        description: "Optional - Please Select Comma-separated list of schemas to run (default: all)"
+        required: false
+        default: ""
+        type: string  
 jobs:
   liquibase:
     runs-on: ubuntu-latest   # GitHub-hosted runner
