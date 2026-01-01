@@ -1,0 +1,45 @@
+- name: Installing Liquibase Secure CLI 5.0.3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg
+          if [ -f /etc/apt/sources.list.d/liquibase.list ]; then
+              sudo cp /etc/apt/sources.list.d/liquibase.list /etc/apt/sources.list.d/liquibase.list.bak
+          fi
+          wget -O- https://repo.liquibase.com/liquibase.asc | gpg --dearmor > liquibase-keyring.gpg
+          sudo mv liquibase-keyring.gpg /usr/share/keyrings/liquibase-keyring.gpg
+          echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/liquibase-keyring.gpg] https://package.liquibase.com stable main' | sudo tee /etc/apt/sources.list.d/liquibase.list
+          sudo apt-get update
+          sudo apt-get install -y liquibase
+          LIQUIBASE_VERSION=$(liquibase --version)
+          echo "Liquibase $LIQUIBASE_VERSION installed successfully."
+          echo "/usr/bin" >> $GITHUB_PATH
+          
+- name: Installing Liquibase 5.0.3
+        run: |
+          LIQUIBASE_DIR="$HOME/liquibase"
+          echo "Cleaning previous installation..."
+          rm -rf "$LIQUIBASE_DIR"
+          mkdir -p "$LIQUIBASE_DIR"
+          echo "Downloading Liquibase Secure CLI 5.0.3..."
+          curl -L https://package.liquibase.com/downloads/cli/liquibase/releases/download/v5.0.1/liquibase-5.0.1.tar.gz -o liquibase-secure.tar.gz
+          echo "Extracting..."
+          tar -xvzf liquibase-secure.tar.gz -C "$LIQUIBASE_DIR" --strip-components=1
+          if [ ! -f "$LIQUIBASE_DIR/liquibase" ]; then
+            echo "Error: liquibase script not found after extraction!"
+            ls -l "$LIQUIBASE_DIR"
+            exit 1
+          fi
+          chmod +x "$LIQUIBASE_DIR/liquibase"
+          echo "$LIQUIBASE_DIR" >> $GITHUB_PATH
+          LIQUIBASE_VERSION=$("$LIQUIBASE_DIR/liquibase" --version)
+          echo "Liquibase $LIQUIBASE_VERSION installed successfully."
+          
+      - name: Run Liquibase Update
+        uses: liquibase/liquibase-github-action@v4
+        with:
+          operation: update
+          changeLogFile: liquibase/changelog.xml
+          url: ${{ secrets.DB_URL }}
+          username: ${{ secrets.DB_USERNAME }}
+          password: ${{ secrets.DB_PASSWORD }}
+             
