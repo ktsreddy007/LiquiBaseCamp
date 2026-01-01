@@ -63,10 +63,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-     - name: Installing Liquibase community version
+     - name: Installing Liquibase Software
        uses: liquibase/setup-liquibase@v2
        with:
-          version: '4.32.0'
+          version: '5.0.0'
           edition: 'community'
 
      - name: Checking Liquibase version
