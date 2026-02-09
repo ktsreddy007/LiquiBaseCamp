@@ -1,0 +1,110 @@
+# Trigger pipeline ONLY when code is pushed to main / master
+trigger: none
+#  branches:
+#    include:
+#      - master
+# Microsoft-hosted Ubuntu agent
+pool:
+  vmImage: ubuntu-latest
+# Global pipeline variables
+variables:
+  - template: templates/variables.yml
+
+# Git Checkout Stage
+stages:
+- stage: Checkout
+  displayName: "Git Checkout"
+  jobs:
+    - job: CheckoutJob
+      steps:
+        - checkout: self # Checkout source code from main branch
+        - script: |
+            set -e
+            echo "=== CHECKOUT STAGE ==="
+            echo "Branch: $(Build.SourceBranch.)"
+            echo "Commit: $(Build.SourceVersion)"
+            echo "Checkout completed at $(date)"
+          displayName: "Checkout Logging"
+# Java Installation Stage        
+- stage: JavaInstall
+  displayName: "Java Installation"
+  dependsOn: Checkout
+  jobs:
+    - job: JavaJob
+      steps: 
+        - task: JavaToolInstaller@0 # Install Java 11 (Liquibase requirement)
+          displayName: "Install Java 11"
+          inputs:
+            versionSpec: '11'
+            jdkArchitectureOption: 'x64'
+            jdkSourceOption: 'PreInstalled'
+        - script: |
+            set -e
+            echo "=== JAVA INSTALL STAGE ==="
+            java -version
+            echo "JAVA_HOME=$JAVA_HOME"
+          displayName: "Verify Java Installation"  
+# Liquibase Installation Stage          
+- stage: LiquibaseInstall
+  displayName: "Liquibase Installation"
+  dependsOn: JavaInstall
+  jobs:
+    - job: LiquibaseJob
+      steps:
+        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template        
+
+# DB Connection Check
+- stage: DBConnectionCheck
+  displayName: "Check Target DB Connectivity"
+  dependsOn: LiquibaseInstall
+  jobs:
+    - job: DBCheckJob
+      steps:
+        - template: templates/db-connection-check.yml  # Reuse DB connection check template    
+
+# Liquibase Validate Stage 
+- stage: Validate
+  displayName: "Liquibase Validate"
+  dependsOn: DBConnectionCheck
+  jobs:
+    - job: ValidateJob
+      steps:
+        - template: templates/liquibase-validate.yml  # Reuse Liquibase validation template
+
+# Liquibase UpdateSQL Stage
+- stage: UpdateSQL
+  displayName: "Liquibase UpdateSQL"
+  dependsOn: Validate
+  jobs:
+    - job: UpdateSQLJob
+      steps:
+        - template: templates/liquibase-update-sql.yml  # Reuse Liquibase update SQL template
+
+# Manual Approval Stage          
+- stage: ManualApproval
+  displayName: "Manual Approval Before Deployment"
+  dependsOn: UpdateSQL
+  jobs:
+    - job: ApprovalJob
+      # Server pool is required for ManualValidation task
+      pool: server
+      steps:
+        - task: ManualValidation@0
+          timeoutInMinutes: 1440
+          inputs:
+            # Users to notify for approval
+            notifyUsers: |
+              TejaSurendar.ReddyKovvuri@nationsbenefits.com
+              AjitemPramod.Joshi@nationsbenefits.com
+            # Approval message shown in Azure DevOps UI
+            instructions: >
+              Please review UpdateSQL output and approve,Liquibase deployment to the target database.
+            onTimeout: reject
+# Liquibase Update (Deploy to Target DB)       
+- stage: Deploy
+  displayName: "Liquibase Update"
+  dependsOn: ManualApproval
+  jobs:
+    - job: DeployJob
+      steps:
+        - template: templates/liquibase-deploy.yml  # Reuse Liquibase deploy template

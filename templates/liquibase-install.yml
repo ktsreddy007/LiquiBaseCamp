@@ -1,0 +1,44 @@
+steps:
+  # Restore Liquibase from cache if available
+  - task: Cache@2
+    inputs:
+      key: 'liquibase | "$(Agent.OS)" | "$(LIQUIBASE_VERSION)"'
+      path: $(LIQUIBASE_HOME)
+      cacheHitVar: CACHE_RESTORED
+    displayName: "Restore Liquibase from Cache"
+    continueOnError: true
+        
+  - script: |
+      set -euo pipefail
+      echo "=== LIQUIBASE INSTALL STAGE ==="
+      echo "[DEBUG] Agent OS: $(uname -a)"
+      echo "[DEBUG] Agent Temp Directory: $(Agent.TempDirectory)"
+      echo "[DEBUG] Liquibase Home: $(LIQUIBASE_HOME)"
+      mkdir -p $(LIQUIBASE_HOME)
+      cd $(LIQUIBASE_HOME)
+      echo "[DEBUG] Working directory: $(pwd)"
+      echo "[DEBUG] Directory before download:"
+      ls -la
+      echo "Downloading Liquibase v$(LIQUIBASE_VERSION)..."
+      curl -sSL -o liquibase.tar.gz \
+          https://github.com/liquibase/liquibase/releases/download/v$(LIQUIBASE_VERSION)/liquibase-$(LIQUIBASE_VERSION).tar.gz
+      echo "[DEBUG] Download size:"
+      ls -lh liquibase.tar.gz
+      tar -xzf liquibase.tar.gz
+      echo "[DEBUG] Directory after extraction:"
+      ls -la
+      chmod +x liquibase
+      echo "[DEBUG] Liquibase binary details:"
+      file liquibase
+      ls -l liquibase
+      ./liquibase --version
+      echo "##vso[task.prependpath]$(LIQUIBASE_HOME)"
+    displayName: "Install & Verify Liquibase (Debug)"
+
+     # Save Liquibase to cache
+  - task: Cache@2
+    condition: ne(variables['CACHE_RESTORED'], 'true')
+    inputs:
+      key: 'liquibase | "$(Agent.OS)" | "$(LIQUIBASE_VERSION)"'
+      path: $(LIQUIBASE_HOME)
+    displayName: "Cache Liquibase Installation"  

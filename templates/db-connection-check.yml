@@ -1,0 +1,52 @@
+# DB Connection Check Template
+steps:
+# Restore Liquibase from cache
+  - task: Cache@2
+    inputs:
+      key: 'liquibase | "$(Agent.OS)" | "$(LIQUIBASE_VERSION)"'
+      path: $(LIQUIBASE_HOME)
+      cacheHitVar: CACHE_RESTORED
+    displayName: "Restore Liquibase from Cache"
+  - script: |
+      set -euo pipefail
+      echo "=== DB CONNECTION CHECK ==="
+      echo "Adding Liquibase to PATH"
+      unset LIQUIBASE_PROPERTIES LIQUIBASE_VERSION
+      echo "##vso[task.prependpath]$(LIQUIBASE_HOME)"
+      export PATH="$(LIQUIBASE_HOME):$PATH"
+
+      echo "[DEBUG] DB_URL= $DB_URL"
+      echo "[DEBUG] DB_USERNAME=$DB_USERNAME"
+      echo "[DEBUG] DB_PASSWORD is set? ${DB_PASSWORD:+yes}"
+
+      echo "[DEBUG] Liquibase path: $(LIQUIBASE_HOME)"
+      
+      echo "[DEBUG] Liquibase version:"
+      liquibase --version
+      
+      if [ -z "$DB_URL" ] || [ -z "$DB_USERNAME" ] || [ -z "$DB_PASSWORD" ]; then
+        echo "ERROR: One or more DB variables are not set (DB_URL/DB_USERNAME/DB_PASSWORD)"
+        exit 1
+      fi
+
+      echo "[DEBUG] Checking for MSSQL JDBC driver in Liquibase lib"
+      ls -la "$(LIQUIBASE_HOME)"/internal/lib | grep -i mssql || echo "WARN: mssql driver not found"
+
+      echo "[DEBUG] Changelog exists?"
+      ls -l DDL/changelog/master.xml || ls -l DML/changelog/master.xml || true
+
+      # Use explicit connection args
+      liquibase \
+        --defaultsFile=config/liquibase.properties \
+        --driver=com.microsoft.sqlserver.jdbc.SQLServerDriver \
+        --username="$DB_USERNAME" \
+        --password="$DB_PASSWORD" \
+        --url="$DB_URL" \
+        status --verbose
+      echo "[DEBUG] DB_URL: $DB_URL"
+      echo "Database connection successful"
+    displayName: "Liquibase DB Connection Validation"
+    env:
+      DB_URL: $(DB_URL)
+      DB_USERNAME: $(DB_USERNAME)
+      DB_PASSWORD: $(DB_PASSWORD)

@@ -1,0 +1,13 @@
+# Liquibase Validate Template
+steps:
+  - script: |
+      set -euo pipefail
+      export PATH=$PATH:$(LIQUIBASE_HOME)
+      echo "=== LIQUIBASE VALIDATE STAGE ==="
+      echo "Using properties file: $(LIQUIBASE_PROPERTIES)"
+      echo "Validating changelog..."
+      liquibase \
+        --defaultsFile=$(LIQUIBASE_PROPERTIES) \
+        validate
+      echo "Validation successful at $(date)"
+    displayName: "Validate Liquibase Changelog"

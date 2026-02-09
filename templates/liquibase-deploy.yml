@@ -1,0 +1,12 @@
+# Liquibase Deploy Template
+steps:
+  - script: |
+      set -euo pipefail
+      export PATH=$PATH:$(LIQUIBASE_HOME)
+      echo "=== LIQUIBASE DEPLOY STAGE ==="
+      echo "Deploying changes to database..."
+      liquibase \
+        --defaultsFile=$(LIQUIBASE_PROPERTIES) \
+        update
+      echo "Liquibase deployment completed at $(date)"
+    displayName: "Deploy Changes to Database"   

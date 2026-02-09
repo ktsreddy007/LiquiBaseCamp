@@ -1,0 +1,12 @@
+# Liquibase UpdateSQL Template
+steps:
+  - script: |
+      set -euo pipefail
+      export PATH=$PATH:$(LIQUIBASE_HOME)
+      echo "=== LIQUIBASE UPDATESQL STAGE ==="
+      echo "Generating dry-run SQL..."
+      liquibase \
+        --defaultsFile=$(LIQUIBASE_PROPERTIES) \
+        updateSQL
+      echo "UpdateSQL generated successfully"
+    displayName: "Generate Update SQL (Dry Run)"
