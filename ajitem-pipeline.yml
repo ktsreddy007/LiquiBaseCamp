@@ -1,0 +1,107 @@
+trigger: none
+#  branches:
+#    include:
+#      - main
+
+parameters:
+  - name: liquibaseVersion
+    type: string
+    default: "4.33.0"
+
+variables:
+  vmImage: ubuntu-latest
+
+stages:
+
+# ---------------- VALIDATE ----------------
+- stage: Validate
+  displayName: "Validate DDL & DML"
+  jobs:
+    - job: Validate
+      pool:
+        vmImage: $(vmImage)
+      steps:
+        - checkout: self
+
+        - script: |
+            curl -L https://github.com/liquibase/liquibase/releases/download/v${{ parameters.liquibaseVersion }}/liquibase-${{ parameters.liquibaseVersion }}.tar.gz \
+              | tar -xz
+            sudo mv liquibase /usr/local/bin/
+          displayName: "Install Liquibase"
+
+        - script: liquibase --defaultsFile=DDL/liquibase.properties validate
+          displayName: "Validate DDL"
+
+        - script: liquibase --defaultsFile=DML/liquibase.properties validate
+          displayName: "Validate DML"
+
+# ---------------- DEV ----------------
+- stage: DEV
+  dependsOn: Validate
+  variables:
+    - group: liquibase-dev
+  jobs:
+    - job: DEV
+      pool:
+        vmImage: $(vmImage)
+      steps:
+        - checkout: self
+
+        - script: |
+            liquibase \
+              --defaultsFile=DDL/liquibase.properties \
+              --url="$(DB_URL)" \
+              --username="$(DB_USERNAME)" \
+              --password="$(DB_PASSWORD)" \
+              update
+          displayName: "DEV DDL Update"
+
+        - script: |
+            liquibase \
+              --defaultsFile=DML/liquibase.properties \
+              --url="$(DB_URL)" \
+              --username="$(DB_USERNAME)" \
+              --password="$(DB_PASSWORD)" \
+              update
+          displayName: "DEV DML Update"
+
+# ---------------- PROD ----------------
+- stage: PROD
+  dependsOn: DEV
+  variables:
+    - group: liquibase-prod
+  jobs:
+    - deployment: PROD
+      environment: PROD
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - checkout: self
+
+              - script: |
+                  liquibase \
+                    --defaultsFile=DDL/liquibase.properties \
+                    --url="$(DB_URL)" \
+                    --username="$(DB_USERNAME)" \
+                    --password="$(DB_PASSWORD)" \
+                    updateSQL
+                displayName: "PROD DDL Dry Run"
+
+              - script: |
+                  liquibase \
+                    --defaultsFile=DDL/liquibase.properties \
+                    --url="$(DB_URL)" \
+                    --username="$(DB_USERNAME)" \
+                    --password="$(DB_PASSWORD)" \
+                    update
+                displayName: "PROD DDL Apply"
+
+              - script: |
+                  liquibase \
+                    --defaultsFile=DML/liquibase.properties \
+                    --url="$(DB_URL)" \
+                    --username="$(DB_USERNAME)" \
+                    --password="$(DB_PASSWORD)" \
+                    update
+                displayName: "PROD DML Apply"
