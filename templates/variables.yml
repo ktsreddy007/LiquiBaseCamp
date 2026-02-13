@@ -1,9 +1,13 @@
 # variables.yml
 variables:
-  LIQUIBASE_VERSION: '4.33.0'       # Liquibase version to install
-  LIQUIBASE_HOME: '$(Agent.TempDirectory)/liquibase'  # Liquibase installation directory
-  LIQUIBASE_PROPERTIES: 'config/liquibase.properties'  # Liquibase properties file
- # Java
-  JAVA_VERSION: '21.0.10'
-  JAVA_HOME_DIR: '$(Agent.TempDirectory)/jdk-21'
+  JAVA_HOME: "/usr/lib/jvm/java-21-openjdk-amd64"
+  LIQUIBASE_HOME: "/opt/liquibase"
+  LIQUIBASE_PROPERTIES: 'config/liquibase.properties'
 
+  #LIQUIBASE_VERSION: '4.33.0'       # Liquibase version to install
+  #LIQUIBASE_HOME: '$(Agent.TempDirectory)/liquibase'  # Liquibase installation directory
+  #LIQUIBASE_PROPERTIES: 'config/liquibase.properties'  # Liquibase properties file
+# JAVA_VERSION: '21.0.10'
+# JAVA_HOME_DIR: '$(Agent.TempDirectory)/jdk-21'
+# JAVA_HOME: "/usr/lib/jvm/java-21-openjdk-amd64"
+# LIQUIBASE_HOME: "/opt/liquibase"

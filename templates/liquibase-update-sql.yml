@@ -5,10 +5,16 @@ steps:
       echo "=== LIQUIBASE UPDATESQL STAGE ==="
       echo "JAVA_HOME=$JAVA_HOME"
       echo "Liquibase location: $(which liquibase)"
-      echo "Using properties file: $(LIQUIBASE_PROPERTIES)"
+      echo "Using properties file: config/liquibase.properties"
       echo "Generating dry-run SQL..."
-      liquibase \
-        --defaultsFile=$(LIQUIBASE_PROPERTIES) \
-        updateSQL
+      liquibase updateSQL --defaultsFile=config/liquibase.properties --driver=com.microsoft.sqlserver.jdbc.SQLServerDriver --username=$(DB_USERNAME) --password=$(DB_PASSWORD) --url=$(DB_URL)   
       echo "UpdateSQL generated successfully"
     displayName: "Generate Update SQL (Dry Run)"
+    env:
+      DB_URL: $(DB_URL)
+      DB_USERNAME: $(DB_USERNAME)
+      DB_PASSWORD: $(DB_PASSWORD)
+
+#        --username=$(DB_USERNAME) \
+#        --password=$(DB_PASSWORD) \
+#        --url=$(DB_URL) \      

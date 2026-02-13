@@ -1,0 +1,17 @@
+steps:
+  - script: |
+      echo "=== Setting up Java & Liquibase PATH ==="
+      echo "##vso[task.prependpath]$(JAVA_HOME)/bin"
+      echo "##vso[task.prependpath]$(LIQUIBASE_HOME)"
+      echo "PATH is now: $PATH"
+      echo "Liquibase executable exists at: $(LIQUIBASE_HOME)/liquibase"
+      ls -l $(LIQUIBASE_HOME)/liquibase
+      if [ ! -x "$(LIQUIBASE_HOME)/liquibase" ]; then
+        echo "ERROR: Liquibase executable not found at $(LIQUIBASE_HOME)/liquibase"
+        exit 1
+      fi
+      #export DB_URL=$(DB_URL)
+      #export DB_USERNAME=$(DB_USERNAME)
+      #export DB_PASSWORD=$(DB_PASSWORD)
+      echo "Environment setup complete."
+    displayName: "Setup & Verify Environment"

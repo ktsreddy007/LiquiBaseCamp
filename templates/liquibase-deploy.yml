@@ -5,10 +5,16 @@ steps:
       echo "=== LIQUIBASE DEPLOY STAGE ==="
       echo "JAVA_HOME=$JAVA_HOME"
       echo "Liquibase location: $(which liquibase)"
-      echo "Using properties file: $(LIQUIBASE_PROPERTIES)"
+      echo "Using properties file: config/liquibase.properties"
       echo "Deploying changes to database..."
-      liquibase \
-        --defaultsFile=$(LIQUIBASE_PROPERTIES) \
-        update
+      liquibase update --defaultsFile=config/liquibase.properties --driver=com.microsoft.sqlserver.jdbc.SQLServerDriver --username=$(DB_USERNAME) --password=$(DB_PASSWORD) --url=$(DB_URL)  
       echo "Liquibase deployment completed at $(date)"
     displayName: "Deploy Changes to Database"   
+    env:
+      DB_URL: $(DB_URL)
+      DB_USERNAME: $(DB_USERNAME)
+      DB_PASSWORD: $(DB_PASSWORD)
+
+#        --username=$(DB_USERNAME) \
+#        --password=$(DB_PASSWORD) \
+#        --url=$(DB_URL) \      

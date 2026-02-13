@@ -7,18 +7,17 @@ pool:
   name: Devops_Automation_Agents
   demands:
     - agent.name -equals nb-preprod-eus2-devops-vm
-# Global pipeline variables
+# Global pipeline variable
 variables:
   - template: templates/variables.yml
 
-# Git Checkout Stage
 stages:
-- stage: Checkout
-  displayName: "Git Checkout"
+- stage: LiquibasePipeline
+  displayName: "Liquibase Deployment Pipeline"
   jobs:
     - job: CheckoutJob
       steps:
-        - checkout: self # Checkout source code from main branch
+        - checkout: self # Checkout source codes from main branch
         - script: |
             set -e
             echo "=== CHECKOUT STAGE ==="
@@ -26,77 +25,45 @@ stages:
             echo "Commit: $(Build.SourceVersion)"
             echo "Checkout completed at $(date)"
           displayName: "Checkout Logging"
-
-          # Liquibase Installation Stage          
-- stage: LiquibaseInstall
-  displayName: "Liquibase Installation"
-  dependsOn: Checkout
-  jobs:
-    - job: LiquibaseJob
+    - job: DBConnectionCheck
+      displayName: "DB Connection Check"
+      dependsOn: CheckoutJob
       steps:
-        - template: templates/java-installation.yml   # Reuse Java installation template   
-        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template        
+        - template: templates/setup-env.yml  
+        - template: templates/db-connection-check.yml
 
-# DB Connection Check
-- stage: DBConnectionCheck
-  displayName: "Check Target DB Connectivity"
-  dependsOn: LiquibaseInstall
-  jobs:
-    - job: DBCheckJob
-      steps:
-        - template: templates/java-installation.yml   # Reuse Java installation template   
-        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template       
-        - template: templates/db-connection-check.yml  # Reuse DB connection check template    
-
-# Liquibase Validate Stage 
-- stage: Validate
-  displayName: "Liquibase Validate"
-  dependsOn: DBConnectionCheck
-  jobs:
     - job: ValidateJob
+      displayName: "Liquibase Validate"
+      dependsOn: DBConnectionCheck
       steps:
-        - template: templates/java-installation.yml   # Reuse Java installation template   
-        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template        
-        - template: templates/liquibase-validate.yml  # Reuse Liquibase validation template
+        - template: templates/setup-env.yml
+        - template: templates/liquibase-validate.yml    
 
-# Liquibase UpdateSQL Stage
-- stage: UpdateSQL
-  displayName: "Liquibase UpdatSQL"
-  dependsOn: Validate
-  jobs:
     - job: UpdateSQLJob
+      displayName: "Liquibase UpdateSQL"
+      dependsOn: ValidateJob
       steps:
-        - template: templates/java-installation.yml   # Reuse Java installation template   
-        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template
-        - template: templates/liquibase-update-sql.yml  # Reuse Liquibase update SQL template
+        - template: templates/setup-env.yml
+        - template: templates/liquibase-update-sql.yml    
 
-# Manual Approval Stage          
-- stage: ManualApproval
-  displayName: "Manual Approval Before Deployment"
-  dependsOn: UpdateSQL
-  jobs:
     - job: ApprovalJob
-      # Server pool is required for ManualValidation task
+      displayName: "Manual Approval Before Deploy"
+      dependsOn: UpdateSQLJob
       pool: server
       steps:
         - task: ManualValidation@0
           timeoutInMinutes: 1440
-          inputs:
-            # Users to notify for approval
+          inputs:  
             notifyUsers: |
-              TejaSurendar.ReddyKovvuri@nationsbenefits.com
-              AjitemPramod.Joshi@nationsbenefits.com
+              Abv@gmail.com
             # Approval message shown in Azure DevOps UI
             instructions: >
               Please review UpdateSQL output and approve,Liquibase deployment to the target database.
             onTimeout: reject
 # Liquibase Update (Deploy to Target DB)       
-- stage: Deploy
-  displayName: "Liquibase Update"
-  dependsOn: ManualApproval
-  jobs:
     - job: DeployJob
+      displayName: "Liquibase Deploy"
+      dependsOn: ApprovalJob
       steps:
-        - template: templates/java-installation.yml
-        - template: templates/liquibase-install.yml 
-        - template: templates/liquibase-deploy.yml  # Reuse Liquibase deploy template
+        - template: templates/setup-env.yml
+        - template: templates/liquibase-deploy.yml
