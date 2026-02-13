@@ -3,5 +3,7 @@ variables:
   LIQUIBASE_VERSION: '4.33.0'       # Liquibase version to install
   LIQUIBASE_HOME: '$(Agent.TempDirectory)/liquibase'  # Liquibase installation directory
   LIQUIBASE_PROPERTIES: 'config/liquibase.properties'  # Liquibase properties file
-
+ # Java
+  JAVA_VERSION: '21.0.10'
+  JAVA_HOME_DIR: '$(Agent.TempDirectory)/jdk-21'
 

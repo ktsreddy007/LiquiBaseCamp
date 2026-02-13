@@ -2,8 +2,10 @@
 steps:
   - script: |
       set -euo pipefail
-      export PATH=$PATH:$(LIQUIBASE_HOME)
       echo "=== LIQUIBASE UPDATESQL STAGE ==="
+      echo "JAVA_HOME=$JAVA_HOME"
+      echo "Liquibase location: $(which liquibase)"
+      echo "Using properties file: $(LIQUIBASE_PROPERTIES)"
       echo "Generating dry-run SQL..."
       liquibase \
         --defaultsFile=$(LIQUIBASE_PROPERTIES) \

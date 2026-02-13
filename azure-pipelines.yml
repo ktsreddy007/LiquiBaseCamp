@@ -3,9 +3,10 @@ trigger: none
 #  branches:
 #    include:
 #      - master
-# Microsoft-hosted Ubuntu agent
 pool:
-  vmImage: ubuntu-latest
+  name: Devops_Automation_Agents
+  demands:
+    - agent.name -equals nb-preprod-eus2-devops-vm
 # Global pipeline variables
 variables:
   - template: templates/variables.yml
@@ -25,32 +26,15 @@ stages:
             echo "Commit: $(Build.SourceVersion)"
             echo "Checkout completed at $(date)"
           displayName: "Checkout Logging"
-# Java Installation Stage        
-- stage: JavaInstall
-  displayName: "Java Installation"
-  dependsOn: Checkout
-  jobs:
-    - job: JavaJob
-      steps: 
-        - task: JavaToolInstaller@0 # Install Java 11 (Liquibase requirement)
-          displayName: "Install Java 11"
-          inputs:
-            versionSpec: '11'
-            jdkArchitectureOption: 'x64'
-            jdkSourceOption: 'PreInstalled'
-        - script: |
-            set -e
-            echo "=== JAVA INSTALL STAGE ==="
-            java -version
-            echo "JAVA_HOME=$JAVA_HOME"
-          displayName: "Verify Java Installation"  
-# Liquibase Installation Stage          
+
+          # Liquibase Installation Stage          
 - stage: LiquibaseInstall
   displayName: "Liquibase Installation"
-  dependsOn: JavaInstall
+  dependsOn: Checkout
   jobs:
     - job: LiquibaseJob
       steps:
+        - template: templates/java-installation.yml   # Reuse Java installation template   
         - template: templates/liquibase-install.yml  # Reuse the Liquibase install template        
 
 # DB Connection Check
@@ -60,6 +44,8 @@ stages:
   jobs:
     - job: DBCheckJob
       steps:
+        - template: templates/java-installation.yml   # Reuse Java installation template   
+        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template       
         - template: templates/db-connection-check.yml  # Reuse DB connection check template    
 
 # Liquibase Validate Stage 
@@ -69,15 +55,19 @@ stages:
   jobs:
     - job: ValidateJob
       steps:
+        - template: templates/java-installation.yml   # Reuse Java installation template   
+        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template        
         - template: templates/liquibase-validate.yml  # Reuse Liquibase validation template
 
 # Liquibase UpdateSQL Stage
 - stage: UpdateSQL
-  displayName: "Liquibase UpdateSQL"
+  displayName: "Liquibase UpdatSQL"
   dependsOn: Validate
   jobs:
     - job: UpdateSQLJob
       steps:
+        - template: templates/java-installation.yml   # Reuse Java installation template   
+        - template: templates/liquibase-install.yml  # Reuse the Liquibase install template
         - template: templates/liquibase-update-sql.yml  # Reuse Liquibase update SQL template
 
 # Manual Approval Stage          
@@ -107,4 +97,6 @@ stages:
   jobs:
     - job: DeployJob
       steps:
+        - template: templates/java-installation.yml
+        - template: templates/liquibase-install.yml 
         - template: templates/liquibase-deploy.yml  # Reuse Liquibase deploy template

@@ -2,8 +2,9 @@
 steps:
   - script: |
       set -euo pipefail
-      export PATH=$PATH:$(LIQUIBASE_HOME)
       echo "=== LIQUIBASE VALIDATE STAGE ==="
+      echo "JAVA_HOME=$JAVA_HOME"
+      echo "Liquibase location: $(which liquibase)"
       echo "Using properties file: $(LIQUIBASE_PROPERTIES)"
       echo "Validating changelog..."
       liquibase \

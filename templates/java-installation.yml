@@ -1,0 +1,45 @@
+steps:
+- task: Cache@2
+  inputs:
+    key: 'java | "$(Agent.OS)" | "$(JAVA_VERSION)"'
+    path: $(JAVA_HOME_DIR)
+    cacheHitVar: JAVA_CACHE_RESTORED
+  displayName: "Restore Java from Cache"
+  continueOnError: true
+
+- script: |
+    set -euo pipefail
+    echo "=== JAVA INSTALL STAGE ==="
+    echo "Requested Java Version: $(JAVA_VERSION)"
+    echo "Java Home: $(JAVA_HOME_DIR)"
+    mkdir -p $(JAVA_HOME_DIR)
+    if [ -x "$(JAVA_HOME_DIR)/bin/java" ]; then
+        echo "Java already exists in workspace."
+    else
+      echo "Downloading Temurin JDK 21..."
+      cd $(Agent.TempDirectory)
+      JDK_TAR="jdk.tar.gz"
+      curl -L --retry 5 -o $JDK_TAR https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse
+      echo "Extracting JDK..."
+      tar -xzf $JDK_TAR -C $(JAVA_HOME_DIR) --strip-components=1 --no-same-owner --warning=no-unknown-keyword
+      rm -f $JDK_TAR 
+    fi
+    export JAVA_HOME=$(JAVA_HOME_DIR)
+    export PATH=$JAVA_HOME/bin:$PATH
+    echo "Java installed:"
+    java -version
+    # Keep pipeline variables so other steps can access Java
+    echo "##vso[task.setvariable variable=JAVA_HOME]$(JAVA_HOME_DIR)"
+    echo "##vso[task.prependpath]$(JAVA_HOME_DIR)/bin"
+  displayName: "Install Java (Pipeline Controlled)"
+
+- task: Cache@2
+  condition: ne(variables['JAVA_CACHE_RESTORED'], 'true')
+  inputs:
+    key: 'java | "$(Agent.OS)" | "$(JAVA_VERSION)"'
+    path: $(JAVA_HOME_DIR)
+  displayName: "Cache Java Installation"
+
+
+
+

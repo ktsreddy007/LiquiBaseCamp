@@ -2,8 +2,10 @@
 steps:
   - script: |
       set -euo pipefail
-      export PATH=$PATH:$(LIQUIBASE_HOME)
       echo "=== LIQUIBASE DEPLOY STAGE ==="
+      echo "JAVA_HOME=$JAVA_HOME"
+      echo "Liquibase location: $(which liquibase)"
+      echo "Using properties file: $(LIQUIBASE_PROPERTIES)"
       echo "Deploying changes to database..."
       liquibase \
         --defaultsFile=$(LIQUIBASE_PROPERTIES) \

@@ -8,21 +8,41 @@ steps:
     displayName: "Restore Liquibase from Cache"
     continueOnError: true
         
+# Install only if not already correct version
   - script: |
       set -euo pipefail
       echo "=== LIQUIBASE INSTALL STAGE ==="
       echo "[DEBUG] Agent OS: $(uname -a)"
       echo "[DEBUG] Agent Temp Directory: $(Agent.TempDirectory)"
       echo "[DEBUG] Liquibase Home: $(LIQUIBASE_HOME)"
+
+      export JAVA_HOME=$(JAVA_HOME)
+      export PATH=$JAVA_HOME/bin:$PATH
+      echo "[DEBUG] JAVA_HOME: $JAVA_HOME"
+      echo "[DEBUG] Java in PATH:"
+      which java || true
+      java -version || true
+
       mkdir -p $(LIQUIBASE_HOME)
       cd $(LIQUIBASE_HOME)
       echo "[DEBUG] Working directory: $(pwd)"
       echo "[DEBUG] Directory before download:"
-      ls -la
+      if [ -f "liquibase" ]; then
+        CURRENT_VERSION=$(./liquibase --version | head -n 1 | awk '{print $3}')
+        echo "Found Liquibase version: $CURRENT_VERSION"
+        if [ "$CURRENT_VERSION" = "$(LIQUIBASE_VERSION)" ]; then
+            echo "Correct version already installed. Skipping download."
+            echo "##vso[task.prependpath]$(LIQUIBASE_HOME)"
+            exit 0
+        else
+            echo "Version mismatch. Reinstalling..."
+            rm -rf *
+        fi
+      fi
       echo "Downloading Liquibase v$(LIQUIBASE_VERSION)..."
       curl -sSL -o liquibase.tar.gz \
-          https://github.com/liquibase/liquibase/releases/download/v$(LIQUIBASE_VERSION)/liquibase-$(LIQUIBASE_VERSION).tar.gz
-      echo "[DEBUG] Download size:"
+        https://github.com/liquibase/liquibase/releases/download/v$(LIQUIBASE_VERSION)/liquibase-$(LIQUIBASE_VERSION).tar.gz
+      echo "[DEBUG] Download size:"  
       ls -lh liquibase.tar.gz
       tar -xzf liquibase.tar.gz
       echo "[DEBUG] Directory after extraction:"
@@ -33,7 +53,7 @@ steps:
       ls -l liquibase
       ./liquibase --version
       echo "##vso[task.prependpath]$(LIQUIBASE_HOME)"
-    displayName: "Install & Verify Liquibase (Debug)"
+    displayName: "Install & Verify Liquibase (Version Controlled)"
 
      # Save Liquibase to cache
   - task: Cache@2
@@ -41,4 +61,4 @@ steps:
     inputs:
       key: 'liquibase | "$(Agent.OS)" | "$(LIQUIBASE_VERSION)"'
       path: $(LIQUIBASE_HOME)
-    displayName: "Cache Liquibase Installation"  
+    displayName: "Cache Liquibase Installation"

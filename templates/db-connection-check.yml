@@ -18,9 +18,7 @@ steps:
       echo "[DEBUG] DB_URL= $DB_URL"
       echo "[DEBUG] DB_USERNAME=$DB_USERNAME"
       echo "[DEBUG] DB_PASSWORD is set? ${DB_PASSWORD:+yes}"
-
       echo "[DEBUG] Liquibase path: $(LIQUIBASE_HOME)"
-      
       echo "[DEBUG] Liquibase version:"
       liquibase --version
       
