@@ -1,23 +1,36 @@
-# DB Connection Check Template
 steps:
   - script: |
       set -euo pipefail
       echo "=== DB CONNECTION CHECK ==="
-      echo "[DEBUG] DB_URL= $DB_URL"
-      echo "[DEBUG] DB_USERNAME=$DB_USERNAME"
-      echo "[DEBUG] DB_PASSWORD is set? ${DB_PASSWORD:+yes}"
-      if [ -z "$DB_URL" ] || [ -z "$DB_USERNAME" ] || [ -z "$DB_PASSWORD" ]; then
-        echo "ERROR: One or more DB variables are not set (DB_URL/DB_USERNAME/DB_PASSWORD)"
+      # Detect changelog path dynamically
+      if [ -f "DML/changelog/master.xml" ]; then
+          CHANGELOG="DML/changelog/master.xml"
+      elif [ -f "DDL/changelog/master.xml" ]; then
+          CHANGELOG="DDL/changelog/master.xml"
+      else
+          echo "ERROR: Changelog file not found"
+          exit 1
+      fi
+      echo "Using changelog file: $CHANGELOG"
+      # Verify JDBC driver
+      if find "$LIQUIBASE_HOME" -name "*.jar" -exec jar tf {} \; | grep -q "com/microsoft/sqlserver/jdbc/SQLServerDriver.class"; then
+        echo "MSSQL JDBC driver found"
+      else
+        echo "ERROR: MSSQL JDBC driver not found. Exiting."
         exit 1
       fi
-      echo "[DEBUG] Checking for MSSQL JDBC driver in Liquibase lib"
-      ls -la "$(LIQUIBASE_HOME)"/internal/lib | grep -i mssql || echo "WARN: mssql driver not found"
-      echo "[DEBUG] Changelog exists?"
-      ls -l DDL/changelog/master.xml || ls -l DML/changelog/master.xml || true
-      liquibase status --verbose --defaultsFile=config/liquibase.properties --driver=com.microsoft.sqlserver.jdbc.SQLServerDriver --username="$DB_USERNAME" --password="$DB_PASSWORD" --url="$DB_URL"
-      echo "[DEBUG] DB_URL: $DB_URL"
-      echo "Database connection successful"
+      
+      # Check DB connection
+      liquibase status \
+        --defaultsFile=config/liquibase.properties \
+        --changeLogFile=$CHANGELOG \
+        --username="$DB_USERNAME" \
+        --password="$DB_PASSWORD" \
+        --url="$DB_URL"
+      echo "Database connection successful."
+    displayName: "DB Connection Check"
     env:
       DB_URL: $(DB_URL)
       DB_USERNAME: $(DB_USERNAME)
       DB_PASSWORD: $(DB_PASSWORD)
+      LIQUIBASE_HOME: $(LIQUIBASE_HOME)

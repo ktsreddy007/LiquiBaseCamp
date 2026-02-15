@@ -1,20 +1,30 @@
-# Liquibase UpdateSQL Template
 steps:
   - script: |
       set -euo pipefail
-      echo "=== LIQUIBASE UPDATESQL STAGE ==="
-      echo "JAVA_HOME=$JAVA_HOME"
-      echo "Liquibase location: $(which liquibase)"
-      echo "Using properties file: config/liquibase.properties"
-      echo "Generating dry-run SQL..."
-      liquibase updateSQL --defaultsFile=config/liquibase.properties --driver=com.microsoft.sqlserver.jdbc.SQLServerDriver --username=$(DB_USERNAME) --password=$(DB_PASSWORD) --url=$(DB_URL)   
-      echo "UpdateSQL generated successfully"
-    displayName: "Generate Update SQL (Dry Run)"
+      echo "=== LIQUIBASE UPDATESQL (DRY RUN) ==="
+
+      # Detect changelog dynamically
+      if [ -f "DML/changelog/master.xml" ]; then
+          CHANGELOG="DML/changelog/master.xml"
+      elif [ -f "DDL/changelog/master.xml" ]; then
+          CHANGELOG="DDL/changelog/master.xml"
+      else
+          echo "ERROR: Changelog file not found"
+          exit 1
+      fi
+      echo "Using changelog file: $CHANGELOG"
+
+      liquibase updateSQL \
+        --defaultsFile=config/liquibase.properties \
+        --changeLogFile=$CHANGELOG \
+        --username="$DB_USERNAME" \
+        --password="$DB_PASSWORD" \
+        --url="$DB_URL"
+
+      echo "Dry-run SQL generated successfully."
+    displayName: "Generate Update SQL"
     env:
       DB_URL: $(DB_URL)
       DB_USERNAME: $(DB_USERNAME)
       DB_PASSWORD: $(DB_PASSWORD)
-
-#        --username=$(DB_USERNAME) \
-#        --password=$(DB_PASSWORD) \
-#        --url=$(DB_URL) \      
+      LIQUIBASE_HOME: $(LIQUIBASE_HOME)

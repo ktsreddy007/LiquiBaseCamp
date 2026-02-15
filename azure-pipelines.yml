@@ -7,63 +7,137 @@ pool:
   name: Devops_Automation_Agents
   demands:
     - agent.name -equals nb-preprod-eus2-devops-vm
+parameters:
+  - name: targetEnvironment
+    type: string
+    values:
+      - Dev
+      - QA
+      - TRAIN
+      - STAGE
+      - PROD    
+
 # Global pipeline variable
 variables:
-  - template: templates/variables.yml
+- ${{ if eq(parameters.targetEnvironment, 'Dev') }}:
+  - template: templates/variables-dev.yml
+- ${{ if eq(parameters.targetEnvironment, 'QA') }}:
+  - template: templates/variables-qa.yml
+- ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+  - template: templates/variables-stage.yml
+- ${{ if eq(parameters.targetEnvironment, 'PROD') }}:
+  - template: templates/variables-prod.yml 
 
 stages:
-- stage: LiquibasePipeline
-  displayName: "Liquibase Deployment Pipeline"
+# ============================
+# Stage 1: Setup Environment
+# ============================
+- stage: SetupStage
+  displayName: "Setup Environment"
   jobs:
-    - job: CheckoutJob
+    - job: SetupJob
       steps:
-        - checkout: self # Checkout source codes from main branch
-        - script: |
-            set -e
-            echo "=== CHECKOUT STAGE ==="
-            echo "Branch: $(Build.SourceBranch.)"
-            echo "Commit: $(Build.SourceVersion)"
-            echo "Checkout completed at $(date)"
-          displayName: "Checkout Logging"
-    - job: DBConnectionCheck
-      displayName: "DB Connection Check"
-      dependsOn: CheckoutJob
+        - checkout: self
+        - template: templates/setup-env.yml
+
+# ============================
+# Stage 2: DB Connection Check
+# ============================
+- stage: DBConnectionStage
+  displayName: "DB Connection Check"
+  dependsOn: SetupStage
+  jobs:
+    - job: DBConnectionJob
       steps:
-        - template: templates/setup-env.yml  
+        - checkout: self
         - template: templates/db-connection-check.yml
-
+# ============================
+# Stage 3: Pre-Deployment Checks (SQLFluff + OPA)
+# ============================
+- stage: PreDeployChecks
+  displayName: "Pre-Deployment Checks"
+  dependsOn: DBConnectionStage
+  jobs:
+    - job: SQLFluffJob
+      displayName: "SQLFluff Lint"
+      steps:
+        - checkout: self
+        - script: |
+            echo "Activating Python venv..."
+            source ~/venvs/sqlfluff-env/bin/activate
+            mkdir -p $(Build.ArtifactStagingDirectory)/sqlfluff
+            echo "Linting all SQL files"
+            which sqlfluff
+            sqlfluff --version
+            ls -l DML/Migrations/Tables
+            echo "Checking sqlfluff version and location:"
+            sqlfluff lint DML/Migrations/Tables/*.sql --dialect mssql --format json > $(Build.ArtifactStagingDirectory)/sqlfluff/sqlfluff-report.json
+            deactivate
+          displayName: "SQLFluff Lint"
+        - publish: $(Build.ArtifactStagingDirectory)/sqlfluff
+          artifact: SQLFluffReports  
+#    - job: OPAJob
+#      displayName: "OPA Policy Check"
+#      dependsOn: SQLFluffJob
+#      steps:
+#        - checkout: self  
+#        - script: |
+#            echo "Running OPA policy check..."
+#            mkdir -p $(Build.ArtifactStagingDirectory)/opa
+#            OPA_DIR="$(Build.SourcesDirectory)/opa"
+#            echo "$OPA_DIR"
+#            opa eval -i "$OPA_DIR/input.json" -d "$OPA_DIR/policy.rego" 'data.example.deny' --format json > $(Build.ArtifactStagingDirectory)/opa/opa-report.json
+#          displayName: "OPA Policy Evaluation"
+#        - publish: $(Build.ArtifactStagingDirectory)/opa
+#          artifact: OPAReports  
+# ============================
+# Stage 4: Liquibase Validate
+# ============================
+- stage: ValidateStage
+  displayName: "Liquibase Validate"
+  dependsOn: PreDeployChecks
+  jobs:
     - job: ValidateJob
-      displayName: "Liquibase Validate"
-      dependsOn: DBConnectionCheck
       steps:
-        - template: templates/setup-env.yml
-        - template: templates/liquibase-validate.yml    
-
+        - checkout: self
+        - template: templates/liquibase-validate.yml
+# ============================
+# Stage 5: Liquibase UpdateSQL (Dry Run)
+# ============================
+- stage: UpdateSQLStage
+  displayName: "Liquibase UpdateSQL"
+  dependsOn: ValidateStage
+  jobs:
     - job: UpdateSQLJob
-      displayName: "Liquibase UpdateSQL"
-      dependsOn: ValidateJob
       steps:
-        - template: templates/setup-env.yml
-        - template: templates/liquibase-update-sql.yml    
-
+        - checkout: self 
+        - template: templates/liquibase-update-sql.yml
+# ============================
+# Stage 6: Approval
+# ============================
+- stage: ApprovalStage
+  displayName: "Manual Approval Before Deploy"
+  dependsOn: UpdateSQLStage
+  jobs:
     - job: ApprovalJob
-      displayName: "Manual Approval Before Deploy"
-      dependsOn: UpdateSQLJob
       pool: server
       steps:
         - task: ManualValidation@0
           timeoutInMinutes: 1440
-          inputs:  
-            notifyUsers: |
-              Abv@gmail.com
-            # Approval message shown in Azure DevOps UI
+          inputs:
+            notifyUsers: ''  
             instructions: >
-              Please review UpdateSQL output and approve,Liquibase deployment to the target database.
+              Please review UpdateSQL output and approve Liquibase deployment to the target database.
             onTimeout: reject
-# Liquibase Update (Deploy to Target DB)       
+# ============================
+# Stage 7: Liquibase Deploy
+# ============================
+- stage: DeployStage
+  displayName: "Liquibase Deploy"
+  dependsOn: ApprovalStage
+  jobs:
     - job: DeployJob
-      displayName: "Liquibase Deploy"
-      dependsOn: ApprovalJob
       steps:
-        - template: templates/setup-env.yml
+        - checkout: self
         - template: templates/liquibase-deploy.yml
+

@@ -1,18 +1,31 @@
-# Liquibase Validate Template
 steps:
   - script: |
       set -euo pipefail
-      echo "=== LIQUIBASE VALIDATE STAGE ==="
-      echo "JAVA_HOME=$JAVA_HOME"
-      echo "Liquibase location: $(which liquibase)"
-      echo "Using properties file: config/liquibase.properties"
-      echo "Validating changelog..."
-      liquibase validate --defaultsFile=config/liquibase.properties --driver=com.microsoft.sqlserver.jdbc.SQLServerDriver --username=$(DB_USERNAME) --password=$(DB_PASSWORD) --url=$(DB_URL)
-      echo "Validation successful at $(date)"
-    displayName: "Validate Liquibase Changelog"
+      echo "=== LIQUIBASE VALIDATE ==="
+
+      # Detect changelog dynamically
+      if [ -f "DML/changelog/master.xml" ]; then
+          CHANGELOG="DML/changelog/master.xml"
+      elif [ -f "DDL/changelog/master.xml" ]; then
+          CHANGELOG="DDL/changelog/master.xml"
+      else
+          echo "ERROR: Changelog file not found"
+          exit 1
+      fi
+      echo "Using changelog file: $CHANGELOG"
+
+      liquibase validate \
+        --defaultsFile=config/liquibase.properties \
+        --changeLogFile=$CHANGELOG \
+        --username="$DB_USERNAME" \
+        --password="$DB_PASSWORD" \
+        --url="$DB_URL"
+
+      echo "Validation successful."
+    displayName: "Liquibase Validate"
     env:
       DB_URL: $(DB_URL)
       DB_USERNAME: $(DB_USERNAME)
       DB_PASSWORD: $(DB_PASSWORD)
-
+      LIQUIBASE_HOME: $(LIQUIBASE_HOME)
           
