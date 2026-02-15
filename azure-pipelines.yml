@@ -1,12 +1,12 @@
 # Trigger pipeline ONLY when code is pushed to main / master
-trigger: none
+trigger: none 
 #  branches:
 #    include:
-#      - master
+#      - main
 pool:
-  name: Devops_Automation_Agents
+  name: Self-Hosted
   demands:
-    - agent.name -equals nb-preprod-eus2-devops-vm
+    - agent.name -equals WSL_Agent
 parameters:
   - name: targetEnvironment
     type: string
