@@ -1,0 +1,99 @@
+# Trigger pipeline ONLY when code is pushed to main / master
+trigger: none 
+#  branches:
+#    include:
+#      - main
+pool:
+  name: Self-Hosted
+  demands:
+    - agent.name -equals WSL_Agent
+
+parameters:
+  - name: targetEnvironment
+    type: string
+    values:
+      - Dev
+      - QA
+      - TRAIN
+      - STAGE
+      - PROD
+
+variables:
+- ${{ if eq(parameters.targetEnvironment, 'Dev') }}:
+  - template: templates/variables-dev.yml
+- ${{ if eq(parameters.targetEnvironment, 'QA') }}:
+  - template: templates/variables-qa.yml
+- ${{ if eq(parameters.targetEnvironment, 'STAGE') }}:
+  - template: templates/variables-stage.yml
+- ${{ if eq(parameters.targetEnvironment, 'PROD') }}:
+  - template: templates/variables-prod.yml
+
+stages:
+# ============================
+# Stage 1: Setup Environment
+# ============================
+- stage: SetupStage
+  displayName: "Setup Environment"
+  jobs:
+    - job: SetupJob
+      steps:
+        - checkout: self
+        - template: templates/setup-env.yml
+
+# ============================
+# Stage 2: DB Connection Check
+# ============================
+- stage: DBConnectionStage
+  displayName: "DB Connection Check"
+  dependsOn: SetupStage
+  jobs:
+    - job: DBConnectionJob
+      steps:
+        - checkout: self
+        - template: templates/db-basline-check.yml
+
+# ============================
+# Stage 3: Generate Baseline Changelog
+# ============================
+- stage: GenerateBaseline
+  displayName: "Generate Baseline Changelog"
+  dependsOn: DBConnectionStage
+  jobs:
+    - job: GenerateChangelog
+      steps:
+        - checkout: self
+        - script: |
+            echo "Generating baseline for tables, views, sequences..."
+            liquibase --changeLogFile=baseline.xml --url="${DB_URL}" --username="${DB_USERNAME}" --password="${DB_PASSWORD}" generateChangeLog --diffTypes=tables,views,sequences --schemas=Core
+            echo "Copying baseline.xml to Artifact Staging Directory..."
+            mkdir -p $(Build.ArtifactStagingDirectory)
+            cp baseline.xml $(Build.ArtifactStagingDirectory)/
+          env:
+            DB_URL: $(DB_URL)
+            DB_USERNAME: $(DB_USERNAME)
+            DB_PASSWORD: $(DB_PASSWORD)
+        - publish: $(Build.ArtifactStagingDirectory)/baseline.xml
+          artifact: BaselineChangelog
+# ============================
+# Stage 4: Sync Changelog (Mark as Applied)
+# ============================
+- stage: SyncBaseline
+  displayName: "Sync Baseline Changelog to DB"
+  dependsOn: GenerateBaseline
+  jobs:
+    - job: ChangelogSync
+      steps:
+        - checkout: self
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: BaselineChangelog
+            path: $(Pipeline.Workspace)
+        - script: |
+            echo "Marking all changesets in baseline as executed..."  
+            liquibase --changeLogFile=$(Pipeline.Workspace)/baseline.xml --url="$DB_URL" --username="$DB_USERNAME" --password="$DB_PASSWORD" changelogSync
+            echo "Changelog sync completed."
+          displayName: "Sync Baseline"
+          env:
+            DB_URL: $(DB_URL)
+            DB_USERNAME: $(DB_USERNAME)
+            DB_PASSWORD: $(DB_PASSWORD)

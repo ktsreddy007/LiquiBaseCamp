@@ -1,0 +1,25 @@
+steps:
+  - script: |
+      set -euo pipefail
+      echo "=== DB CONNECTION CHECK ==="
+      # Verify JDBC driver
+      if find "$LIQUIBASE_HOME" -name "*.jar" -exec jar tf {} \; | grep -q "com/microsoft/sqlserver/jdbc/SQLServerDriver.class"; then
+        echo "MSSQL JDBC driver found"
+      else
+        echo "ERROR: MSSQL JDBC driver not found. Exiting."
+        exit 1
+      fi
+      echo "URL=$DB_URL"
+      echo "USER=$DB_USERNAME"
+      # Check DB connection
+      liquibase listLocks \
+        --username="$DB_USERNAME" \
+        --password="$DB_PASSWORD" \
+        --url="$DB_URL"
+      echo "Database connection successful."
+    displayName: "DB Connection Check"
+    env:
+      DB_URL: $(DB_URL)
+      DB_USERNAME: $(DB_USERNAME)
+      DB_PASSWORD: $(DB_PASSWORD)
+      LIQUIBASE_HOME: $(LIQUIBASE_HOME)
