@@ -1,0 +1,153 @@
+name: PR Validation
+on:
+    pull_request:
+      branches:
+        - main
+        - master
+permissions:
+    contents: read
+    pull-requests: read
+defaults:
+    run:
+      shell: bash
+
+jobs:
+    detect-changes:
+      name: "Detect Changes & Validate Inputs"
+      runs-on: [ self-hosted, myvm ]
+      environment: myprodenv
+      timeout-minutes: 5
+      outputs:
+        change_category: ${{ steps.detect.outputs.ChangeCategory }}
+        changed_sql_file: ${{ steps.detect.outputs.ChangedSQLFile }}
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v6
+          with:
+            fetch-depth: 0
+        - name: Auto-detect Change Category
+          id: detect
+          env:
+            TARGET_BRANCH: ${{ github.base_ref }}
+            PR_SHA: ${{ github.sha }}
+          run: |
+            set -euo pipefail
+            echo "PR target branch : $TARGET_BRANCH"
+            echo "PR Source commit : $PR_SHA"
+            MERGE_BASE=$(git merge-base HEAD "origin/$TARGET_BRANCH" 2>/dev/null || echo "HEAD~1")
+            echo "Merge base : $MERGE_BASE"
+            CHANGED=$(git diff --name-only "$MERGE_BASE...HEAD" 2>/dev/null || echo "")
+            echo "Changed files"
+            echo "$CHANGED"
+            HAS_DDL=0; HAS_DML=0
+            echo "$CHANGED" | grep -qE "DDL/(migrations|rollback)/" && HAS_DDL=1 || true
+            echo "$CHANGED" | grep -qE "DML/(migrations|rollback)/" && HAS_DML=1 || true
+            if [ "$HAS_DDL" -eq 1 ] &&  ["$HAS_DML" -eq 1 ]; then
+              echo "PR contains changes in both DML and DDL - will scan all"
+              CATEGORY="All"
+            elif [ "$HAS_DDL" -eq 1 ]; then
+              CATEGORY="DDL"
+            elif [ "$HAS_DML" -eq 1 ]; then
+              CATEGORY="DML"
+            else
+              echo "::warning:: No files under DDL or DML /migration/rolback were changed"
+              echo "Defaulting changecategory to all for validations"
+              CATEGORY="All"
+            fi
+            echo "Detected ChangeCategory: $CATEGORY"
+            echo "ChangeCategory="$CATEGORY" >> "$GITHUB_OUTPUT"
+            CHANGED_SQL_FILE="${GITHUB_WORKSPACE}/.changed_sql_files.txt"
+            echo "$CHANGED" | grep -E "DDL/(migrations|rollback)/.*\.sql$|DML/(migrations|rollback)/.*\.sql$" > "$CHANGED_SQL_FILE" || true
+            CHANGED_SQL_COUNT=$(wc -l < "$CHANGED_SQL_FILE" | tr -d ' ')
+            echo "Chnaged SQL Files: $CHANGED_SQL_COUNT"
+            cat "$CHANGED_SQL_FILE"
+            echo "ChangedSQLFile=$CHNAGED_SQL_FILE" >> "$GITHUB_OUTPUT"
+    sql-placement:
+      name: "SQL Placement Check"
+      needs: detect-changes
+      runs-on: [ self-hosted, myvm ]
+      environment: myprodenv
+      timeout-minutes: 10
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v6
+          with:
+            fetch-depth: 0
+        - name: Recreate Changed SQL File List
+          id: recreate
+          env:
+            TARGET_BRANCH: ${{ github.base_ref }}
+          run: |
+            set -euo pipefail
+            MERGE_BASE=$(git merge HEAD "origin/$TARGET_BRANCH" 2>/dev/null || echo "HEAD~1")
+            CHANGED=$(git diff --name-only "$MERGE_BASE...HEAD" 2>/dev/null || echo "")
+            CHANGED_SQL_FILE="${GITHUB_WORKSPACE}/.changed_sql_files.txt"
+            echo "$CHANGED" | grep -E "DDL/(migrations|rollback)/.*\.sql$|DML/(migration|rollback)/.*\.sql$" > "$CHANGED_SQL_FILE" || true
+            echo "ChangesSQLFile=$CHANGED_SQL_FILE" >> "$GITHUB_OUTPUT"
+        - name: SQL Placement Check
+          uses: ./.github/actions/sql-placement-check
+          with:
+            ChangeCategory: ${{ needs.detect-changes.outputs.change_category}}
+            UseAI: ${{ vars.LB_SQL_PLACEMENT_USE_AI || 'false' }}
+            FailOnViolation: "true"
+            ChangedSQLFile: ${{ steps.recreate.outputs.ChangedSQLFile }}
+            azure_openai_endpoint: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+            azure_openai_key: ${{ secrets.AZURE_OPENAI_KEY }}
+            azure_openai_deployment: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+    sql-quality:
+      name: "SQL Quality Analysis"
+      needs: detect-changes
+      runs-on: [ self-hosted, myvm]
+      environment: myprodenv
+      timeout-minutes: 10
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v6
+          with:
+            fetch-depth: 0
+        - name:  Set up python
+          uses: actions/setup-python@v6
+          with:
+            python-version: "3.x"
+        - name: Recreate Changed SQL File List
+          id: recreate
+          env:
+            TARGET_BRANCH: ${{ github.base_ref }}
+          run: |
+           set -euo pipefail
+           MERGE_BASE=$(git merge HEAD "origin/$TARGET_BRANCH" 2>/dev/null || echo "HEAD~1")
+           CHANGED=$(git diff --name-only "$MERGE_BASE...HEAD" 2>/dev/null || echo "")
+           CHANGED_SQL_FILE="${GITHUB_WORKSPACE}/.changed_sql_files.txt"
+           echo "$CHANGED" | grep -E "DDL/(migrations|rollback)/.*\.sql$|DML/(migration|rollback)/.*\.sql$" > "$CHANGED_SQL_FILE" || true
+           echo "ChangesSQLFile=$CHANGED_SQL_FILE" >> "$GITHUB_OUTPUT"
+        - name: SQL Quality Check
+          env:
+            CHANGED_SQL_FILE: ${{ steps.recreate.outputs.ChangedSQLFile }}
+          run: |
+            if ! command -v python &>/dev/null; then
+            echo "::error:: python not found on PATH.Ensure Python is installed on the runner"
+            exit 1
+            fi
+            if [ ! -f "validate_sql_quality.py" ]; then
+            echo "::error:: validate_sql_quality.py not found in workspace root"
+            exit 1
+            fi
+            python validate_sql_quality.py \ 
+               --changed-files "$CHANGED_SQL_FILE" \
+               --repo-root
+               --verbose
+    code-quality:
+        name: "Code Quality checks"
+        needs: detect-changes
+        runs-on: [ self-hosted, myvm]
+        environment: myprodenv
+        timeout-minutes: 10
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v6     
+          - name: pre-deploy Checks
+            uses: ./.github/actions/pre-deploy-checks
+            with:
+                TargetEnvironment: Dev
+                ChangeCategory: ${{ needs.detect-changes.outputs.change_category}}          
+                            
