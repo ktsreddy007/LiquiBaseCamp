@@ -1,0 +1,21 @@
+[sqlfluff]
+dialect = tsql
+templater = jinja
+
+# only runs your defined rules
+rules = CPO1, CP02, CP03, AM04, ST05
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = upper
+
+[sqlfluff:rules:ambiguous.column_count]
+wildcard_policy = single
+
+[sqlfluff:rules:convention.terminator]
+require_final_semicolon = True

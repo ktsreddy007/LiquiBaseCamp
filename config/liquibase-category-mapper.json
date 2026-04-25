@@ -1,0 +1,74 @@
+{
+    "Dev": {
+      "databases": {
+        "Exm_devdb": {
+            "DDL": {
+                "changelog": "DDL/changelogs/master.json",
+                "trackingTable": "DDL_DATABASECHANGELOG",
+                "lockTable": "DDL_DATABASECHANGELOGLOCK",
+                "label": "ddl"
+            },
+            "DML": {
+                "changelog": "DML/changelogs/master.json",
+                "trackingTable": "DML_DATABASECHANGELOG",
+                "lockTable": "DML_DATABASECHANGELOGLOCK",
+                "label": "dml"
+            }
+          }
+       }
+    },
+    "QA": {
+      "databases": {
+        "Exm_qadb": {
+            "DDL": {
+                "changelog": "DDL/changelogs/master.json",
+                "trackingTable": "DDL_DATABASECHANGELOG",
+                "lockTable": "DDL_DATABASECHANGELOGLOCK",
+                "label": "ddl"
+            },
+            "DML": {
+                "changelog": "DML/changelogs/master.json",
+                "trackingTable": "DML_DATABASECHANGELOG",
+                "lockTable": "DML_DATABASECHANGELOGLOCK",
+                "label": "dml"
+            }
+          }
+       }
+    },
+    "TRAIN": {
+      "databases": {
+        "Exm_traindb": {
+            "DDL": {
+                "changelog": "DDL/changelogs/master.json",
+                "trackingTable": "DDL_DATABASECHANGELOG",
+                "lockTable": "DDL_DATABASECHANGELOGLOCK",
+                "label": "ddl"
+            },
+            "DML": {
+                "changelog": "DML/changelogs/master.json",
+                "trackingTable": "DML_DATABASECHANGELOG",
+                "lockTable": "DML_DATABASECHANGELOGLOCK",
+                "label": "dml"
+            }
+          }
+       }
+    },
+    "PROD": {
+      "databases": {
+        "Exm_proddb": {
+            "DDL": {
+                "changelog": "DDL/changelogs/master.json",
+                "trackingTable": "DDL_DATABASECHANGELOG",
+                "lockTable": "DDL_DATABASECHANGELOGLOCK",
+                "label": "ddl"
+            },
+            "DML": {
+                "changelog": "DML/changelogs/master.json",
+                "trackingTable": "DML_DATABASECHANGELOG",
+                "lockTable": "DML_DATABASECHANGELOGLOCK",
+                "label": "dml"
+            }
+          }
+       }
+    }
+}  
