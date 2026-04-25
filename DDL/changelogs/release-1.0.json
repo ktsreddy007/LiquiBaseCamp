@@ -1,0 +1,18 @@
+{
+    "databaseChangeLog": [
+        { 
+            "changeSet": {
+                "id": "DDL-v1.0.1-create-question-group",
+                "author": "DB-Team",
+                "labels": "release-1.0,ddl",
+                "comment" : "Create a query",
+                "changes": [
+                    { "sqlFile": { "path": "DDL/migrations/Tables/create-question-group.sql"} }
+                ],
+                "rollback": [
+                    { "sqlFile": { "path": "DDL/rollback/Tables/rb-create-question-group.sql"} }
+                ]
+            }
+        }
+    ]
+}

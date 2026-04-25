@@ -1,0 +1,311 @@
+name: Liquibase Deploy Pipeline
+on: 
+  workflow_dispatch:
+    inputs:
+      TargetEnvironment:
+        description: "Target environment (dev/qa/demo)"
+        required: true
+        type: choice
+        options:
+          - Dev
+          - Qa
+          - TRAIN
+          - PROD
+      TargetDatabases:
+        description: "Target Databases (comma-separated, eg sas,mor)"
+        required: true
+        type: string
+        default: ""    
+      ChangeCategory:
+        description: "Change Category"
+        required: true
+        type: choice
+        options:
+          - DDL
+          - DML
+          - NONE
+      ReleaseLables:
+        description: "Release labels to deploy (comma-separated, eg. release-2.1,release-2.2).Leave empty to deploy all pending changesets"
+        required: false
+        type: string
+        default: ""
+      SchemaName:
+        description: "SchemaName (optional)"
+        required: false
+        type: string
+        default: ""
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash  
+
+jobs:
+  # PROD - pauses for approval where approvers present in env - prodapprover
+  # NON PROD - passes instantly
+  prod-gate:
+    name: "Pre-Pipeline Gate"
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 1440
+    steps:
+      - name: Gate Passed
+        run: |
+          echo "Pre-pipeline gate passed for ${{ inputs.TargetEnvironment }}"
+          echo "Approved by: ${{ github.actor }}"
+  #Job 1 - input validation + Build matrix        
+  input-validation:
+    name: "Validate Pipeline Inputs"
+    needs: prod-gate
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 5
+    outputs:
+      db_matrix: ${{ steps.build-matrix.outputs.matrix }}
+      db_lists: ${{ steps.build-matrix.outputs.db_lists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Enforce Main branch for Non-Dev Env
+        if: inputs.TargetEnvironment != 'Dev'
+        env:
+          CURRENT_BRANCH: ${{ github.ref }}
+          TARGET_ENV: ${{ inputs.TargetEnvironment }}
+        run: |
+         set -euo pipefail
+         if [[ "$CURRENT_BRANCH" != "refs/heads/main" && "$CURRENT_BRANCH" != "refs/heads/master" ]]; then
+           echo "::error::Deployments to $TARGET_ENV are restricted to the main branch only."
+           echo "::error::Current branch: $CURRENT_BRANCH"
+           echo "::error::merge your changes to main via PR before deploying to $TARGET_ENV"
+           exit 1
+         fi
+         echo "Branch Passed: deploying to $TARGET_ENV from $CURRENT_BRANCH"
+      - name: Input Validation
+        uses: ./.github/actions/input-validation
+        with:
+          PipelineType: migration
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          DatabaseName: ${{ inputs.TargetDatabases }}
+          AllowedDatabases: ${{ vars.ALLOWED_DATABASES }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}
+      - name: Build Database Matrix
+        id: buid-matrix
+        env:
+          DB_INPUT: ${{ inputs.TargetDatabases }}
+        run: |
+          set -euo pipefail
+          DB_LIST="$DB_INPUT"
+          DB_LIST=$(echo "$DB_LIST" | sed 's/[[:space:]]*,[[:space:]]*/,/g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          IFS=',' read -ra DB_ARRAY <<< "$DB_LIST"
+          JSON_ARRAY="["
+          for i in "${!DB_ARRAY[@]}"; do
+            DB="${DB_ARRAY[$i]}"
+            [[ $i -gt 0 ]] && JSON_ARRAY+=","
+            JSON_ARRAY+="\"$DB\""
+          done
+          JSON_ARRAY+"]"
+          echo "matrix={\"database\":$JSON_ARRAY}" >> "$GITHUB_OUTPUT"
+          echo "db_list=$DB_LIST" >> "$GITHUB_OUTPUT"
+          echo "Matrix: $JSON_ARRAY"
+  #Job 2 - Setup Env + Table Cleanup
+  setup:
+    name: "Setup - ${{ matrix.database }}"
+    needs: input-validation
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 5
+    strategy:
+      matrix: ${{ fromJson(needs.input-validation.outputs.db_matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}
+      - name: Table Cleanup
+        uses: ./.github/actions/table-cleaner
+        with:
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          DatabaseName: ${{ matrix.database }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }} 
+  #Job 3 - DB Connection Check
+  db-connection:
+    name: "DB Connection - ${{ matrix.database }}"
+    needs: [ input-validation, setup ]
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 5
+    strategy:
+      matrix: ${{ fromJson(needs.input-validation.outputs.db_matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}
+      - name: DB Connection Check
+        uses: ./.github/actions/db-connection-check
+        with:
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          DatabaseName: ${{ inputs.TargetDatabases }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}
+          liquibase_home: ${{ vars.LB_LIQUIBASE_HOME }}     
+  #Job 4 - pre-deploy checks (SQLFluff + OPA)
+  pre-deploy-checks:
+    name: "Code Quality Checks"
+    needs: db-connection
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Pre-Deploy Checks
+        uses: ./.github/actions/pre-deploy-checks
+        with:
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}  
+  #Job 5 - Liquibase Validate
+  validate:
+    name: "Liquibase Validate - ${{ matrix.database }}"
+    needs: [ input-validation, pre-deploy-checks ]
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 10
+    strategy: 
+      matrix: ${{ fromJson(needs.inputs-validation.outputs.db_matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}
+      - name: Liquibase Validate
+        uses: ./.github/actions/liquibase-operation-router
+        with:
+          stage_display_name: "Liquibase Validate"
+          operation: validate
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          DatabaseName: ${{ inputs.TargetDatabases }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}
+          ReleaseLabels: ${{ inputs.ReleaseLables }}
+          SchemaName: ${{ inputs.SchemaName }}
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}  
+  #Job 6 - Liquibase UpdateSQL (Dry run)
+  update-sql:
+    name: "UpdateSQL (Dry-run) - ${{ matrix.database }}"
+    needs: [ input-validation, validate ]
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 30
+    strategy: 
+      matrix: ${{ fromJson(needs.inputs-validation.outputs.db_matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}
+      - name: Liquibase UpdateSQL
+        uses: ./.github/actions/liquibase-operation-router
+        with:
+          stage_display_name: "Liquibase UpdateSQL (Dry Run)"
+          operation: updateSQL
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          DatabaseName: ${{ inputs.TargetDatabases }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}
+          ReleaseLabels: ${{ inputs.ReleaseLables }}
+          SchemaName: ${{ inputs.SchemaName }}
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}    
+  #Job 7 - Manual Approval
+  approval:
+    name: "Manual Approval Before Deploy"
+    needs: update-sql
+    runs-on: [ self-hosted, myvm ]
+    environment: prodapprover
+    timeout-minutes: 1440
+    steps:
+      - name: Approval Gate
+        run: |
+          echo "==============================================="
+          echo " Deploymennt Appoved by: ${{ github.actor }}"
+          echo " Environment: ${{ inputs.TargetEnvironment }}"
+          echo " Databases: ${{ inputs.TargetDatabases }}"
+          echo " Category: ${{ inputs.ChangeCategory }}"
+          echo " Releases: ${{ inputs.ReleaseLables || '(all pending)' }}"
+  #Job 8 - Liquibase Deploy (Update)
+  deploy:
+    name: "Deploy - ${{ matrix.database }}"
+    needs: [ input-validation, approval ]
+    runs-on: [ self-hosted, myvm ]
+    environment: ${{ inputs.TargetEnvironment == 'PROD' && 'prodapprover' || inputs.TargetEnvironment == 'STAGE' && 'stgapprover' || inputs.TargetEnvironment == 'QA' && 'qaapprover' || inputs.TargetEnvironment == 'TRAIN' && 'trainapprover' || 'devapprover' }}
+    timeout-minutes: 30
+    strategy: 
+      matrix: ${{ fromJson(needs.inputs-validation.outputs.db_matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}
+      - name: Pre-deploy Tag
+        uses: ./.github/actions/pre-deploy-tag
+        with:
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          DatabaseName: ${{ inputs.TargetDatabases }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}
+      - name: Liquibase Deploy
+        uses: ./.github/actions/liquibase-operation-router
+        with:
+          stage_display_name: "Liquibase Deploy"
+          operation: update
+          TargetEnvironment: ${{ inputs.TargetEnvironment }}
+          DatabaseName: ${{ inputs.TargetDatabases }}
+          ChangeCategory: ${{ inputs.ChangeCategory }}
+          ReleaseLabels: ${{ inputs.ReleaseLables }}
+          SchemaName: ${{ inputs.SchemaName }}
+          db_url: ${{ secrets.LB_DB_URL }}
+          db_username: ${{ secrets.LB_DB_USERNAME }}
+          db_password: ${{ secrets.LB_DB_PASSWORD }}
+          java_home: ${{ vars.LB_JAVA_HOME }}        
+      
+
